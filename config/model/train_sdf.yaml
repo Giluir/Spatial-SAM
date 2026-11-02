@@ -1,0 +1,170 @@
+# @package _global_
+scratch:
+  resolution: 512
+  train_batch_size: 1
+  num_train_workers: 4
+  phases_per_epoch: 1
+  num_epochs: 30
+  train_epoch_num_samples: null
+  val_epoch_num_samples: null
+  train_min_nonzero_ratio: 0.6
+  train_ignore_index: null
+  train_slack_acceptance: 0.01
+  val_epoch_freq: 1
+  base_lr: 0.0002
+  weight_decay: 1.0e-05
+sdf_dataset:
+  config:
+    mean: null
+    std: null
+    train: ???
+    val: ???
+  augmentation:
+    brightness_probability: 0.5
+    contrast_probability: 0.5
+    brightness_range:
+    - 0.8
+    - 1.2
+    contrast_range:
+    - 0.8
+    - 1.2
+    axis_probability: 0.5
+    elastic_probability: 0.4
+    elastic_alpha: 1000
+    elastic_sigma: 50
+trainer:
+  _target_: training.trainer.Trainer
+  mode: train_only
+  max_epochs: ${times:${scratch.num_epochs},${scratch.phases_per_epoch}}
+  accelerator: cuda
+  seed_value: 123
+  val_epoch_freq: ${scratch.val_epoch_freq}
+  task:
+    _target_: training.tasks.SDFRegressionTask
+  model:
+    _target_: spatialsam.models.sdf_unet.SDFUNet3D
+    in_channels: 1
+    out_channels: 1
+    final_sigmoid: true
+    f_maps:
+    - 32
+    - 64
+    - 128
+    - 256
+    layer_order: gcr
+    num_groups: 8
+    num_levels: 4
+    is_segmentation: false
+  data:
+    train:
+      _target_: training.dataset.loaders.EpochDataLoader
+      dataset:
+        _target_: training.dataset.sdf.SDFPatchDataset
+        augmentation: ${sdf_dataset.augmentation}
+        dataset_config: ${sdf_dataset.config.train}
+        split: train
+        resolution: ${scratch.resolution}
+        patch_shape:
+        - 128
+        - 128
+        - 128
+        stride_shape:
+        - 80
+        - 80
+        - 80
+        epoch_num_samples: ${scratch.train_epoch_num_samples}
+        min_nonzero_ratio: ${scratch.train_min_nonzero_ratio}
+        ignore_index: ${scratch.train_ignore_index}
+        slack_acceptance: ${scratch.train_slack_acceptance}
+      batch_size: ${scratch.train_batch_size}
+      num_workers: ${scratch.num_train_workers}
+      shuffle: true
+      pin_memory: true
+      drop_last: false
+      collate_fn:
+        _target_: training.batch.collate_volume_patches
+        _partial_: true
+        dict_key: all
+    val:
+      _target_: training.dataset.loaders.EpochDataLoader
+      dataset:
+        _target_: training.dataset.sdf.SDFPatchDataset
+        dataset_config: ${sdf_dataset.config.val}
+        split: val
+        resolution: ${scratch.resolution}
+        patch_shape:
+        - 128
+        - 128
+        - 128
+        stride_shape:
+        - 128
+        - 128
+        - 128
+        epoch_num_samples: ${scratch.val_epoch_num_samples}
+        min_nonzero_ratio: 0.6
+        ignore_index: null
+        slack_acceptance: 0.01
+      batch_size: ${scratch.train_batch_size}
+      num_workers: ${scratch.num_train_workers}
+      shuffle: false
+      pin_memory: true
+      drop_last: false
+      collate_fn:
+        _target_: training.batch.collate_volume_patches
+        _partial_: true
+        dict_key: val
+  optim:
+    amp:
+      enabled: false
+    optimizer:
+      _target_: torch.optim.Adam
+      lr: ${scratch.base_lr}
+      weight_decay: ${scratch.weight_decay}
+    update_policy:
+      _target_: training.update_policy.EpochLossPlateau
+      interval: 2000
+      max_updates: 100001
+      min_lr: 1.0e-06
+      factor: 0.2
+      patience: 8
+  loss:
+    all:
+      _target_: training.loss_sdf.MSEWithEikonalLoss
+      lambda_eikonal: 0.5
+      voxel_size:
+      - 1.0
+      - 1.0
+      - 1.0
+      truncation_threshold: 0.95
+    val:
+      _target_: training.loss_sdf.MSEWithEikonalLoss
+      lambda_eikonal: 0.5
+      voxel_size:
+      - 1.0
+      - 1.0
+      - 1.0
+      truncation_threshold: 0.95
+  distributed:
+    backend: gloo
+    find_unused_parameters: true
+  logging:
+    log_level_primary: INFO
+    tensorboard_writer:
+      _target_: training.utils.logger.make_tensorboard_logger
+      log_dir: ${launcher.experiment_log_dir}/tensorboard
+      flush_secs: 120
+      should_log: true
+    log_dir: ${launcher.experiment_log_dir}/logs
+    log_freq: 10
+  checkpoint:
+    save_dir: ${launcher.experiment_log_dir}/checkpoints
+    save_freq: 0
+    model_weight_initializer:
+      _target_: spatialsam.checkpoints.load_model_weights
+      _partial_: true
+      checkpoint_path: ${launcher.ckpt_path}
+launcher:
+  num_nodes: 1
+  gpus_per_node: 1
+  ckpt_path: null
+  experiment_log_dir: ???

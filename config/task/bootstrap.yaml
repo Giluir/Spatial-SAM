@@ -1,0 +1,17 @@
+volume_dir: ???
+resolution: 1024
+unet_downsample: 2
+mean: ???
+std: ???
+save_masks: true
+strict_stem_match: true
+true_dir: null
+annotations: null
+output_root: ???
+sam2_config_path: model/bootstrap.yaml
+sam2_model_path: ???
+to_sdf: true
+save_few_masks: true
+mask_to_binary: false
+select_mask_with_obj: true
+slices: 6.25

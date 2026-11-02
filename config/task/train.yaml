@@ -1,0 +1,138 @@
+num_rounds: 1
+start_round: 1
+start_step: 1
+cuda_devices: '0'
+shared:
+  runtime:
+    resolution:
+    - 1024
+    - 1024
+    - 1024
+    unet_downsample: 2
+    mean: ???
+    std: ???
+    train_mode: train_only
+    accelerator: cuda
+  configs:
+    sam2_bootstrap_config: model/bootstrap.yaml
+    sam2_sdf_train_config: model/train_sdf.yaml
+    sam2_sam_train_config: model/train_sam.yaml
+  launcher:
+    num_nodes: 1
+    gpus_per_node: 1
+  paths:
+    output_root: ???
+    volume_dir: ???
+    true_dir: null
+    annotations: null
+    sam2_model_path: ???
+pipeline:
+  bootstrap:
+    enabled: true
+    save_masks: true
+    save_few_masks: true
+    mask_to_binary: false
+    slices: 6.25
+    to_sdf: true
+    select_mask_with_obj: true
+  round_schedule:
+  - start_round: 1
+    end_round: 1
+    sdf_epochs: 30
+    sam_epochs: 50
+  - start_round: 2
+    end_round: 999999
+    sdf_epochs: 10
+    sam_epochs: 10
+  stages:
+    sdf_train:
+      sam2_config_path: ${shared.configs.sam2_sdf_train_config}
+      launcher: ${shared.launcher}
+      scratch:
+        train_batch_size: 1
+        num_train_workers: 2
+        train_epoch_num_samples: null
+        val_epoch_num_samples: null
+        train_min_nonzero_ratio: 0.6
+        train_ignore_index: null
+        train_slack_acceptance: 0.01
+        val_epoch_freq: 1
+        base_lr: 0.0002
+        weight_decay: 1.0e-05
+      sdf_dataset:
+        config:
+          volume_dir: ${shared.paths.volume_dir}
+          true_dir: ${shared.paths.true_dir}
+          mean: ${shared.runtime.mean}
+          std: ${shared.runtime.std}
+          strict_stem_match: true
+      trainer:
+        mode: ${shared.runtime.train_mode}
+    sdf_infer:
+      volume_dir: ${shared.paths.volume_dir}
+      save_masks: true
+      sdf_infer:
+        patch_shape:
+        - 128
+        - 128
+        - 128
+        stride_shape:
+        - 128
+        - 128
+        - 128
+        halo_shape:
+        - 16
+        - 16
+        - 16
+        output_dtype: float16
+        use_autocast: true
+        autocast_dtype: bfloat16
+    sam_train:
+      sam2_config_path: ${shared.configs.sam2_sam_train_config}
+      launcher:
+        num_nodes: ${shared.launcher.num_nodes}
+        gpus_per_node: ${shared.launcher.gpus_per_node}
+        ckpt_path: ${shared.paths.sam2_model_path}
+      scratch:
+        train_batch_size: 1
+        num_train_workers: 2
+        num_frames: 13
+        max_num_objects: 3
+        base_lr: 0.00065
+        vision_lr: 0.00035
+        phases_per_epoch: 1
+        samples_per_volume: 120
+        samples_per_volume_val: 10
+        val_epoch_freq: 1
+      dataset:
+        single_object_mode: true
+        use_ref_mask: true
+        use_few_masks: true
+        mask_to_binary: false
+        config:
+          volume_dir: ${shared.paths.volume_dir}
+          true_dir: ${shared.paths.true_dir}
+          mean: ${shared.runtime.mean}
+          std: ${shared.runtime.std}
+          strict_stem_match: true
+      trainer:
+        mode: ${shared.runtime.train_mode}
+        model:
+          forward_backbone_per_frame_for_eval: false
+        data:
+          train:
+            collate_fn:
+              _target_: training.utils.data_utils.collate_fn_with_ref_mask
+              _partial_: true
+              dict_key: all
+          val:
+            collate_fn:
+              _target_: training.utils.data_utils.collate_fn_with_ref_mask
+              _partial_: true
+              dict_key: val
+    sam_infer:
+      volume_dir: ${shared.paths.volume_dir}
+      sam2_config_path: model/predict.yaml
+      save_masks: true
+      mask_to_binary: false
+      to_sdf: true

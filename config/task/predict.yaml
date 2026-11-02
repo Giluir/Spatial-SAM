@@ -1,0 +1,32 @@
+volume_dir: ???
+resolution: 1024
+unet_downsample: 2
+mean: ???
+std: ???
+save_masks: true
+strict_stem_match: true
+output_root: ???
+mode: end2end
+sam2_config_path: model/predict.yaml
+sam2_model_path: ???
+sdf_model_path: ???
+sdf_infer:
+  patch_shape:
+  - 128
+  - 128
+  - 128
+  stride_shape:
+  - 128
+  - 128
+  - 128
+  halo_shape:
+  - 16
+  - 16
+  - 16
+  output_dtype: float16
+  use_autocast: true
+  autocast_dtype: bfloat16
+to_sdf: false
+mask_to_binary: true
+postprocess: true
+to_instance: false
